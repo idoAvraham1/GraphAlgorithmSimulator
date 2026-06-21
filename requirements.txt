@@ -1,0 +1,5 @@
+# Runtime (production + local dev server)
+Flask==3.0.3
+gunicorn==22.0.0
+
+# Tests use the standard library: python -m unittest discover -s tests -v

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Graph Algorithm Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">&lt;/&gt;</span>
+      <h1>Graph Algorithm Simulator</h1>
+    </div>
+
+    <div class="topbar-controls">
+      <label class="field field-algo">
+        <span>Algorithm</span>
+        <select id="algo-select">
+          <option value="bfs">BFS — Breadth-First Search</option>
+          <option value="dfs">DFS — Depth-First Search</option>
+          <option value="dijkstra">Dijkstra — Shortest Path</option>
+          <option value="floyd-warshall">Floyd–Warshall — All Pairs</option>
+        </select>
+        <span class="algo-desc" id="algo-desc">O(V + E) · Level-order traversal</span>
+      </label>
+
+      <label class="field" id="start-field">
+        <span>Start node</span>
+        <select id="start-select"></select>
+      </label>
+
+      <div class="field switch-field">
+        <span>Directed</span>
+        <label class="toggle" title="Toggle directed edges">
+          <input type="checkbox" id="directed-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <button id="shortcuts-btn" class="btn btn-icon btn-help" type="button" title="Keyboard shortcuts (?)">?</button>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <section class="canvas-pane">
+      <div class="toolbar">
+        <div class="mode-group" role="group" aria-label="Graph editing mode">
+          <button id="add-node-btn" class="btn" aria-pressed="false">+ Node</button>
+          <button id="connect-mode-btn" class="btn" aria-pressed="false">Connect</button>
+          <button id="edit-edge-btn" class="btn" aria-pressed="false">Edit edge</button>
+          <button id="delete-mode-btn" class="btn" aria-pressed="false">Delete node</button>
+        </div>
+        <label class="field field-preset">
+          <span>Preset</span>
+          <select id="preset-select" aria-label="Load example graph">
+            <option value="sample">Sample graph</option>
+            <option value="disconnected">Disconnected components</option>
+            <option value="weighted-paths">Weighted paths (Dijkstra)</option>
+            <option value="dense">Dense graph (Floyd–Warshall)</option>
+          </select>
+        </label>
+        <button id="clear-btn" class="btn btn-ghost">Clear graph</button>
+        <span class="hint" id="mode-hint">Select a tool to edit, or drag nodes to reposition.</span>
+      </div>
+
+      <div class="canvas-wrap" id="canvas-wrap">
+        <div class="mode-badge" id="mode-badge" hidden aria-hidden="true">
+          <span class="mode-badge-dot"></span>
+          <span id="mode-badge-label"></span>
+        </div>
+        <div id="cy"></div>
+        <svg id="connect-preview" class="connect-preview" hidden aria-hidden="true">
+          <line id="connect-preview-line"></line>
+        </svg>
+
+        <div id="color-legend" class="color-legend" hidden aria-label="Highlight legend">
+          <span class="color-legend-title">Highlights</span>
+          <ul class="color-legend-list">
+            <li><span class="swatch swatch-current"></span> Current node</li>
+            <li><span class="swatch swatch-visited"></span> Visited</li>
+            <li><span class="swatch swatch-active"></span> Active edge</li>
+            <li><span class="swatch swatch-tree"></span> Tree / discovery edge</li>
+          </ul>
+        </div>
+
+        <button id="fit-btn" class="btn canvas-fab" type="button" title="Fit graph to view (F)">Fit</button>
+
+        <div id="weight-popover" class="weight-popover" hidden>
+          <div class="weight-popover-header">
+            <span id="weight-popover-label">Edge weight</span>
+            <button type="button" class="weight-popover-close" id="weight-popover-close" aria-label="Cancel">×</button>
+          </div>
+          <div class="weight-popover-body">
+            <label class="weight-field">
+              <span>Weight</span>
+              <input type="number" id="weight-input" min="0" step="any" value="1" inputmode="decimal">
+            </label>
+            <div class="weight-popover-actions">
+              <button type="button" class="btn btn-ghost weight-delete" id="weight-delete" hidden>Delete edge</button>
+              <div class="weight-popover-actions-right">
+                <button type="button" class="btn btn-ghost weight-cancel" id="weight-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="weight-confirm">Add edge</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="trace-pane" id="trace-pane">
+      <div class="trace-header">
+        <div class="trace-header-text">
+          <h2>Algorithm run</h2>
+          <p class="trace-subtitle" id="trace-subtitle">Step through the execution and watch the graph update.</p>
+        </div>
+        <button id="trace-pane-toggle" class="btn trace-pane-toggle" type="button" aria-expanded="true" aria-controls="trace-pane-body">
+          Hide panel
+        </button>
+      </div>
+
+      <div class="trace-pane-body" id="trace-pane-body">
+        <div class="run-section">
+          <div class="run-controls">
+            <button id="run-btn" class="btn btn-primary btn-run" title="Run algorithm (R)">▶ Run</button>
+            <div class="step-controls" role="group" aria-label="Step playback">
+              <button id="step-back-btn" class="btn btn-icon" disabled title="Previous step (←)" aria-label="Previous step">◀</button>
+              <button id="play-btn" class="btn btn-icon" disabled title="Play / pause (Space)" aria-label="Play">▶</button>
+              <button id="step-fwd-btn" class="btn btn-icon" disabled title="Next step (→)" aria-label="Next step">▶|</button>
+            </div>
+          </div>
+
+          <div class="progress-bar-wrap" id="progress-wrap" hidden>
+            <div class="progress-bar" role="progressbar" id="step-progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-bar-fill" id="step-progress-fill"></div>
+            </div>
+          </div>
+
+          <div class="speed-row">
+            <span class="speed-label">Fast</span>
+            <input type="range" id="speed-slider" min="200" max="2000" step="100" value="700" aria-label="Playback speed">
+            <span class="speed-label">Slow</span>
+            <span id="step-counter">0 / 0</span>
+          </div>
+
+          <div id="run-stats" class="run-stats" hidden></div>
+        </div>
+
+        <div class="insight-tabs" role="tablist" aria-label="Algorithm output">
+          <button class="insight-tab active" role="tab" id="tab-steps" aria-selected="true" aria-controls="panel-steps" data-tab="steps">Steps</button>
+          <button class="insight-tab" role="tab" id="tab-distances" aria-selected="false" aria-controls="panel-distances" data-tab="distances">Distances</button>
+          <button class="insight-tab" role="tab" id="tab-matrix" aria-selected="false" aria-controls="panel-matrix" data-tab="matrix" hidden>All pairs</button>
+        </div>
+
+        <div class="insight-panels">
+          <div class="insight-panel active" role="tabpanel" id="panel-steps" aria-labelledby="tab-steps">
+            <p class="panel-desc">Each step explains what the algorithm is doing right now.</p>
+            <div id="trace-log" class="trace-log">
+              <div class="empty-state" id="trace-empty">
+                <span class="empty-icon">◎</span>
+                <p>Press <strong>Run</strong> to see a step-by-step walkthrough here.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="insight-panel" role="tabpanel" id="panel-distances" aria-labelledby="tab-distances" hidden>
+            <p class="panel-desc">Shortest-path distances from the start node, updated as Dijkstra progresses.</p>
+            <div class="table-wrap">
+              <table id="distance-table"></table>
+              <div class="empty-state" id="distance-empty">
+                <span class="empty-icon">↔</span>
+                <p>Distances appear when you run <strong>Dijkstra</strong>.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="insight-panel" role="tabpanel" id="panel-matrix" aria-labelledby="tab-matrix" hidden>
+            <p class="panel-desc">All-pairs shortest path lengths. Updated cells flash amber; pivot node row/column highlighted in cyan.</p>
+            <div class="table-wrap" id="matrix-table-wrap"></div>
+            <div class="empty-state" id="matrix-empty">
+              <span class="empty-icon">▦</span>
+              <p>The distance matrix appears when you run Floyd–Warshall.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <div id="preset-dialog" class="dialog" hidden>
+    <div class="dialog-backdrop" id="preset-dialog-backdrop"></div>
+    <div class="dialog-card" role="alertdialog" aria-labelledby="preset-dialog-title" aria-describedby="preset-dialog-desc" aria-modal="true">
+      <h3 id="preset-dialog-title">Load preset graph?</h3>
+      <p id="preset-dialog-desc">This replaces your current graph with the selected example.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost dialog-cancel" id="preset-dialog-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="preset-dialog-confirm">Load preset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="clear-dialog" class="dialog" hidden>
+    <div class="dialog-backdrop" id="clear-dialog-backdrop"></div>
+    <div class="dialog-card" role="alertdialog" aria-labelledby="clear-dialog-title" aria-describedby="clear-dialog-desc" aria-modal="true">
+      <h3 id="clear-dialog-title">Clear graph?</h3>
+      <p id="clear-dialog-desc">This removes all nodes and edges. This action cannot be undone.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost dialog-cancel" id="clear-dialog-cancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="clear-dialog-confirm">Clear all</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="shortcuts-dialog" class="dialog" hidden>
+    <div class="dialog-backdrop" id="shortcuts-dialog-backdrop"></div>
+    <div class="dialog-card dialog-card-wide" role="dialog" aria-labelledby="shortcuts-dialog-title" aria-modal="true">
+      <div class="dialog-header">
+        <h3 id="shortcuts-dialog-title">Keyboard shortcuts</h3>
+        <button type="button" class="dialog-close" id="shortcuts-dialog-close" aria-label="Close">×</button>
+      </div>
+      <dl class="shortcuts-list">
+        <div><dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Toggle editing tool (press again to exit)</dd></div>
+        <div><dt><kbd>R</kbd></dt><dd>Run algorithm</dd></div>
+        <div><dt><kbd>Space</kbd></dt><dd>Play / pause steps</dd></div>
+        <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next step</dd></div>
+        <div><dt><kbd>F</kbd></dt><dd>Fit graph to view</dd></div>
+        <div><dt><kbd>?</kbd></dt><dd>Show this help</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Exit tool / close dialogs</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div id="onboarding" class="onboarding" hidden>
+    <div class="onboarding-backdrop"></div>
+    <div class="onboarding-card" role="dialog" aria-labelledby="onboarding-title" aria-modal="true">
+      <div class="onboarding-progress">
+        <span class="onboarding-dot active" data-step="0"></span>
+        <span class="onboarding-dot" data-step="1"></span>
+        <span class="onboarding-dot" data-step="2"></span>
+      </div>
+
+      <div class="onboarding-step active" data-step="0">
+        <h3 id="onboarding-title">Build your graph</h3>
+        <p>Use the toolbar to switch between editing modes:</p>
+        <ul class="onboarding-list">
+          <li><strong>+ Node</strong> — click empty space on the canvas to place a node.</li>
+          <li><strong>Connect</strong> — click two nodes to link them with a weighted edge.</li>
+          <li><strong>Edit edge</strong> — click an edge to change its weight or remove just that edge.</li>
+          <li><strong>Delete node</strong> — click a node to remove it (edges attached to it go too).</li>
+          <li>Click any tool again (or press <strong>Esc</strong>) to exit editing and pan or drag nodes freely.</li>
+        </ul>
+        <p class="onboarding-note">Try the <strong>Preset</strong> dropdown for example graphs, or build your own.</p>
+      </div>
+
+      <div class="onboarding-step" data-step="1">
+        <h3>Choose an algorithm</h3>
+        <p>Pick BFS, DFS, Dijkstra, or Floyd–Warshall from the top bar. Set a start node for single-source algorithms, and toggle <strong>Directed</strong> if edges should have direction.</p>
+      </div>
+
+      <div class="onboarding-step" data-step="2">
+        <h3>Run and learn</h3>
+        <p>Press <strong>Run</strong>, then use play/pause or step buttons to watch nodes and edges highlight on the canvas. Use the <strong>Steps</strong> tab to follow along; <strong>Distances</strong> (Dijkstra) and <strong>All pairs</strong> (Floyd–Warshall) show extra detail.</p>
+      </div>
+
+      <div class="onboarding-actions">
+        <button type="button" class="btn btn-ghost" id="onboarding-skip">Skip tour</button>
+        <button type="button" class="btn btn-primary" id="onboarding-next">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
