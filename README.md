@@ -1,54 +1,69 @@
 # Graph Algorithm Simulator
 
-Build a graph by hand, then watch BFS, DFS, Dijkstra, or Floyd–Warshall run
-on it step by step — visited nodes, relaxed edges, and (for Dijkstra) live
-shortest-distance updates; Floyd–Warshall shows the all-pairs matrix.
+Interactive web app for building weighted graphs and stepping through **BFS**, **DFS**, **Dijkstra**, and **Floyd–Warshall** with live visualization — visited nodes, frontier updates, edge relaxations, and all-pairs distance matrices.
 
-- **Backend:** Flask REST API, `Graph` domain model, pluggable algorithm strategies
-- **Frontend:** Cytoscape.js canvas, vanilla JS step player
+**Stack:** Flask · Gunicorn · Cytoscape.js · vanilla JS
 
-## Run locally
+## Features
+
+- Draw graphs on a canvas — add nodes, connect edges, edit weights, toggle directed/undirected
+- Step-by-step playback with play/pause, scrubbing, and a clickable step log
+- Algorithm-specific panels: visit order (BFS/DFS), shortest distances (Dijkstra), distance matrix (Floyd–Warshall)
+- Preset example graphs, keyboard shortcuts, and run statistics
+
+## Quick start
 
 ```bash
 python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+venv\Scripts\activate          # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
 
-Open http://localhost:5000
+Open [http://localhost:5000](http://localhost:5000).
 
-## How it works
+For production-style local runs:
 
-1. Use the toolbar to add nodes, connect edges, edit weights, or delete nodes.
-   Click a tool again (or press **Esc**) to exit editing and pan/drag freely.
-2. Pick an algorithm and start node (not needed for Floyd–Warshall). Load a
-   **preset graph** from the dropdown or build your own, then hit **Run**.
-3. The backend builds a `Graph` from your payload, runs the selected algorithm,
-   and returns a step trace (`visit`, `discover`, `settle`, `relax`, `update`, …).
-   The frontend replays those steps with play/pause and scrubbing.
+```bash
+gunicorn app:app
+```
 
-## Backend layout
+## Usage
+
+1. Use the toolbar to add nodes, connect edges, edit weights, or delete nodes. Click a tool again (or press **Esc**) to exit editing mode and pan/drag freely.
+2. Choose an algorithm and start node (Floyd–Warshall needs no start). Load a **preset** from the dropdown or build your own graph, then click **Run**.
+3. Watch the trace replay on the canvas. Scrub the timeline or click steps in the log to jump around.
+
+Press **?** in the app for the full shortcut list.
+
+## Architecture
 
 ```
 algorithms/
-  graph.py           # Graph — validation, adjacency, from_api_dict()
-  models.py          # Edge, TraceResult
-  base.py            # Algorithm protocol (Strategy pattern)
+  models.py          Edge, TraceResult
+  graph.py           Graph — validation, adjacency, from_api_dict()
+  base.py            Algorithm protocol (Strategy pattern)
   bfs.py, dfs.py, dijkstra.py, floyd_warshall.py
-  registry.py        # get_algorithm("bfs") lookup
-app.py               # HTTP layer only
-tests/               # unittest suite
+  registry.py        name → algorithm lookup
+app.py               HTTP layer
+templates/           index.html
+static/              Cytoscape canvas + step player
+tests/               unittest suite
 ```
 
-Each algorithm implements `run(graph, start=...) -> TraceResult` and is registered
-by name in `registry.py`. To add a new algorithm: create a module, implement the
-protocol, and add one line to the registry.
+Each algorithm implements `run(graph, *, start=...) -> TraceResult` and is registered by name in `registry.py`. To add a new one: create a module, implement the protocol, add one line to the registry.
 
 ## API
 
-`POST /api/run/<algo>` where `<algo>` is one of `bfs`, `dfs`, `dijkstra`,
-`floyd-warshall`.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Web UI |
+| `GET` | `/healthz` | Health check |
+| `POST` | `/api/run/<algo>` | Run algorithm and return step trace |
+
+`<algo>` is one of `bfs`, `dfs`, `dijkstra`, `floyd-warshall`.
+
+**Request body:**
 
 ```json
 {
@@ -59,7 +74,16 @@ protocol, and add one line to the registry.
 }
 ```
 
-Returns `{"steps": [...], "result": {...}}`.
+**Response:**
+
+```json
+{
+  "steps": [{"type": "visit", "node": "A", "...": "..."}],
+  "result": {"order": ["A", "B", "C"]}
+}
+```
+
+Step types vary by algorithm: `visit` / `discover` (BFS), `visit` (DFS), `settle` / `relax` (Dijkstra), `init` / `update` (Floyd–Warshall).
 
 ## Tests
 
@@ -67,24 +91,25 @@ Returns `{"steps": [...], "result": {...}}`.
 python -m unittest discover -s tests -v
 ```
 
-## Deploying (free tier)
+## Deploy
 
-**Render or Railway** (recommended — both auto-deploy from GitHub):
+The repo includes a `Procfile` for platforms that read it automatically.
+
+**Render** (recommended for a stable free-tier demo link):
 
 1. Push this repo to GitHub.
-2. Create a new Web Service on [render.com](https://render.com) or
-   [railway.com](https://railway.com) and point it at the repo.
-3. Build command: `pip install -r requirements.txt`
-   Start command: `gunicorn app:app` (already set in `Procfile`)
-4. Deploy. You'll get a public HTTPS URL.
+2. Create a **Web Service** on [render.com](https://render.com) and connect the repo.
+3. **Build command:** `pip install -r requirements.txt`
+4. **Start command:** `gunicorn app:app --bind 0.0.0.0:$PORT`
+5. Deploy — Render provides a public HTTPS URL.
 
-Note: free tiers may "sleep" after inactivity, so the first load after
-a while can take a few seconds — worth a one-line mention next to the
-link on your resume.
+[Railway](https://railway.com) works the same way if you prefer it.
 
-## Ideas for extending this
+> Free tiers may sleep after inactivity. The first visit after idle time can take a few seconds to wake up.
 
-- Add Bellman-Ford and Kruskal/Prim (MST) — add a class + registry entry
-- Add Johnson's algorithm as a companion to Floyd–Warshall for runtime comparison
-- Persist saved graphs (e.g. SQLite) so people can share a graph by URL
-- Show Big-O complexity and actual step count side by side
+## Possible extensions
+
+- Bellman–Ford; Kruskal / Prim (MST)
+- Johnson's algorithm alongside Floyd–Warshall for runtime comparison
+- Persist and share graphs via URL (e.g. SQLite + encoded state)
+- Display Big-O complexity vs. actual step count
